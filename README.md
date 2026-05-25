@@ -33,5 +33,6 @@ Currently, fleet adapters are developed and has been tested for these supported 
 ## Running the fleet adapter
 
 ```
-ros2 run fleet_adapter_r3 fleet_adapter_r3 -c config.yaml -n nav_graph.yaml -d dock_summary.yaml
+ros2 run fleet_adapter_r3 fleet_adapter -c configs/config.yaml -n configs/nav_graph.yaml -d configs
+/dock_summary.yaml
 ```

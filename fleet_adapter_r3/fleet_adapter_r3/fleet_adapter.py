@@ -68,10 +68,10 @@ def initialize_fleet(config_yaml, nav_graph_path, node, use_sim_time, server_uri
         return location
 
     transient_qos = QoSProfile(
-        history=History.RMW_QOS_POLICY_HISTORY_KEEP_LAST,
+        history=History.KEEP_LAST,
         depth=1,
-        reliability=Reliability.RMW_QOS_POLICY_RELIABILITY_RELIABLE,
-        durability=Durability.RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL)
+        reliability=Reliability.RELIABLE,
+        durability=Durability.TRANSIENT_LOCAL)
     dock_summary_publisher = node.create_publisher(
         DockSummary, Topic.DOCK_SUMMARY.value, qos_profile=transient_qos)
 

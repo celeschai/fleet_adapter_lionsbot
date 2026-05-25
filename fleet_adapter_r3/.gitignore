@@ -1,0 +1,13 @@
+template/
+configs/config.yaml
+log/
+build/
+install/
+__pycache__/
+*.egg-info/
+*.egg
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
