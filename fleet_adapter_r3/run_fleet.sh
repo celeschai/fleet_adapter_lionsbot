@@ -8,11 +8,11 @@ rm -rf build/ install/ log/ .pytest_cache/ __pycache__/ *.egg-info/ src/*.egg-in
 
 echo "=== 2. Sourcing ROS 2 environment ==="
 echo "
-Reminder: Please set the LIONSBOT_USER and LIONSBOT_PASSWORD environment variables. 
+Reminder: Please set the LIONSBOT_USER, LIONSBOT_PASSWORD, ROBOT_ID environment variables. 
 export LIONSBOT_USER="your_email@lionsbot.com" 
 export LIONSBOT_PASSWORD="your_password"
+export ROBOT_ID="robotid"
 "
-envsubst <configs/config.yaml.template > configs/config.yaml
 
 # Adjust the path below if your ROS 2 installation is under an underlay like /opt/ros/humble/setup.bash
 # Assuming 'ros2' was a custom alias/script, using standard sourcing template here:
@@ -45,5 +45,5 @@ fi
 echo "=== 6. Launching fleet_adapter_r3 ==="
 ros2 run fleet_adapter_r3 fleet_adapter \
     -c configs/config.yaml \
-    -n configs/nav_graph.yaml \
+    -n maps/L3_pantry.yaml \
     -d configs/dock_summary.yaml
