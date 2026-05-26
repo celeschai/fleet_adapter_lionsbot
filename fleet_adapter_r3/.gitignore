@@ -3,6 +3,9 @@ configs/config.yaml
 log/
 build/
 install/
+scripts/
+maps/
+
 __pycache__/
 *.egg-info/
 *.egg

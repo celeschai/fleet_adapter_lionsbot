@@ -1,0 +1,10 @@
+<launch>
+  <arg name="map_yaml_file" description="Path to building map yaml"/>
+
+  <node pkg="rmf_traffic_ros2" exec="rmf_traffic_schedule" name="rmf_traffic_schedule" output="screen"/>
+
+  <node pkg="rmf_building_map_tools" exec="building_map_server" name="building_map_server" args="$(var map_yaml_file)" output="screen"/>
+
+  <node pkg="rmf_fleet_adapter" exec="door_supervisor" name="door_supervisor" output="screen"/>
+  <node pkg="rmf_fleet_adapter" exec="lift_supervisor" name="lift_supervisor" output="screen"/>
+</launch>
