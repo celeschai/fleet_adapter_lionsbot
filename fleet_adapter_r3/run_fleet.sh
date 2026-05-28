@@ -11,6 +11,7 @@ echo "
 Reminder: Please set the LIONSBOT_USER, LIONSBOT_PASSWORD, ROBOT_ID environment variables. 
 export LIONSBOT_USER="your_email@lionsbot.com" 
 export LIONSBOT_PASSWORD="your_password"
+export LIONSBOT_API="hostname"
 export ROBOT_ID="robotid"
 "
 
