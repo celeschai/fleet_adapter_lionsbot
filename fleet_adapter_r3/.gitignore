@@ -5,6 +5,7 @@ build/
 install/
 scripts/
 maps/
+data/
 
 __pycache__/
 *.egg-info/
