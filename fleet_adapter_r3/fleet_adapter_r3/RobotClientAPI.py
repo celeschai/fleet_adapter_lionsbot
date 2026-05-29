@@ -56,12 +56,11 @@ logger = logging.getLogger(__name__)
 
 
 def _mask_token(token: str | None) -> str:
-    # if not token:
-    #     return '<none>'
-    # if len(token) <= 16:
-    #     return token
-    # return f'{token[:12]}...{token[-12:]}'
-    return token
+    if not token:
+        return '<none>'
+    if len(token) <= 16:
+        return '<short_token>'
+    return f'{token[:8]}...{token[-8:]}'
 
 
 def _redact_mapping(data: dict, secret_keys: tuple = ('password', 'token')) -> dict:
@@ -100,6 +99,7 @@ class RobotAPI:
 
         self._lock = threading.Lock()
         self._token_lock = threading.Lock()
+        self._subscribed_robots: set[str] = set()
 
         # Test connectivity
         connected = self.check_connection()
@@ -139,10 +139,10 @@ class RobotAPI:
         if self.token is None:
             return False
 
-        # connect_to_robot_status_thread = threading.Thread(target=self.connect_to_robot_status_ws, daemon=True)
+        connect_to_robot_status_thread = threading.Thread(target=self.connect_to_robot_status_ws, daemon=True)
         connect_to_robot_pose_thread = threading.Thread(target=self.connect_to_robot_position_ws, daemon=True)
 
-        # connect_to_robot_status_thread.start()
+        connect_to_robot_status_thread.start()
         connect_to_robot_pose_thread.start()
         time.sleep(3)
         return True
@@ -154,8 +154,7 @@ class RobotAPI:
 
         with self._token_lock:
             try:
-                # Login must not send a Bearer token — only email/password in the body.
-                logger.info('HTTP POST login request body=%s', _redact_mapping(payload))
+                logger.debug('HTTP POST login request body=%s', _redact_mapping(payload))
                 r = self._post(
                     path=f'{constants.OPEN_API_PREFIX}{path}',
                     headers=None,
@@ -163,7 +162,7 @@ class RobotAPI:
                 )
                 r.raise_for_status()
                 data = r.json()
-                logger.info('HTTP POST login response body=%s', _redact_mapping(data))
+                logger.debug('HTTP POST login response body=%s', _redact_mapping(data))
                 token = data['token']
                 expiry_raw = data['tokenExpiryIsoUtcTime']
                 for fmt in ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ"):
@@ -179,7 +178,7 @@ class RobotAPI:
                 self.token_expiry = token_expiry.timestamp()
                 logger.info(
                     'Login OK: token=%s expires_utc=%s (in %.0fs)',
-                    token,
+                    _mask_token(token),
                     expiry_raw,
                     self.token_expiry - time.time(),
                 )
@@ -201,7 +200,7 @@ class RobotAPI:
         return [self.token]
 
     def _log_ws_auth(self, channel: str, ws_url: str, subprotocols: list[str]):
-        logger.info(
+        logger.debug(
             'WS CONNECT [%s] url=%s origin=https://%s offered_subprotocols=%s',
             channel,
             ws_url,
@@ -272,16 +271,24 @@ class RobotAPI:
             json_message = json.loads(message)
 
             with self._lock:
-                if json_message['operation_fb'] == 'touchscreen_robot_status':
+                operation_fb = json_message.get('operation_fb')
+                if operation_fb == 'ping':
+                    return
+                robot_id = json_message.get('robot_id')
+                if robot_id is None:
+                    return
+
+                if operation_fb == 'touchscreen_robot_status':
                     robot_status = json_message['content']
 
                     # Update the robot current state id if robot has changed state
-                    if self.robot_status[json_message['robot_id']]['state'] != robot_status['state']:
-                        self.robot_current_state_id[json_message['robot_id']] = uuid.uuid4()
+                    prev_status = self.robot_status.get(robot_id, {})
+                    if prev_status.get('state') != robot_status['state']:
+                        self.robot_current_state_id[robot_id] = uuid.uuid4()
 
                     response_codes = robot_status['response_codes']
                     alert_ids = [code['code'] for code in response_codes]
-                    self.robot_status[json_message['robot_id']] = {
+                    self.robot_status[robot_id] = {
                         'eta': robot_status['time_to_complete'],
                         'alertIds': alert_ids,
                         'docked': robot_status['docked'],
@@ -291,9 +298,10 @@ class RobotAPI:
                         'state': robot_status['state'],
                         'status': robot_status['status']
                     }
-                elif json_message['operation_fb'] == 'operation_status':
+                elif operation_fb == 'operation_status':
                     operation_status = json_message['content']
-                    self.robot_mission[json_message['robot_id']] = {
+                    status_snapshot = self.robot_status.get(robot_id, {})
+                    self.robot_mission[robot_id] = {
                         'missionStatus': {
                             'activeMissionType': operation_status['activeMissionType'],
                             'mission': {
@@ -302,19 +310,19 @@ class RobotAPI:
                                 'y': operation_status['mission'].get('y', None), 
                             }
                         },
-                        'eta': self.robot_status[json_message['robot_id']]['eta'],
-                        'alertIds': self.robot_status[json_message['robot_id']]['alertIds'],
-                        'progress': self.robot_status[json_message['robot_id']]['progress']
+                        'eta': status_snapshot.get('eta'),
+                        'alertIds': status_snapshot.get('alertIds'),
+                        'progress': status_snapshot.get('progress')
                     }
-                elif json_message['operation_fb'] == OperationEndStatus.P2P_END_STATUS:
+                elif operation_fb == OperationEndStatus.P2P_END_STATUS:
                     self.robot_operation_end_status = json_message
                 else:
-                    robot_operation = self.robot_operation.get(json_message['robot_id'], None)
+                    robot_operation = self.robot_operation.get(robot_id, None)
                     if robot_operation is not None and \
-                            robot_operation['operation'] == json_message['operation_fb'] and \
+                            robot_operation['operation'] == operation_fb and \
                             robot_operation['time_stamp'] < time.time_ns() / 1000000:
                         operation_status = json_message['content']
-                        self.robot_operation[json_message['robot_id']]['status'] = operation_status['status']
+                        self.robot_operation[robot_id]['status'] = operation_status['status']
 
         def on_error(wsc, error):
             print(error)
@@ -324,7 +332,6 @@ class RobotAPI:
 
         def on_open(wsc):
             print("Opened Status Websocket Connection")
-            self._log_ws_subprotocol_selected('robotstatus', wsc)
 
         path = f'{constants.WS_OPEN_API_PREFIX}/robotstatus'
         subprotocols = self._ws_subprotocols()
@@ -338,7 +345,7 @@ class RobotAPI:
             on_error=on_error,
             on_message=on_message,
         )
-        self.robot_status_ws_connection.run_forever(origin=f'https://{self.prefix}')
+        self.robot_status_ws_connection.run_forever(suppress_origin=True)
 
     def connect_to_robot_position_ws(self):
         self.refresh_expired_token()
@@ -350,21 +357,23 @@ class RobotAPI:
             logger.debug('WS RECV pose message=%s', message)
             json_message = json.loads(message)
             with self._lock:
-                if json_message['operation_fb'] == 'robot_pose':
+                if json_message.get('operation_fb') == 'ping':
+                    return
+                robot_id = json_message.get('robot_id')
+                if json_message.get('operation_fb') == 'robot_pose' and robot_id is not None:
                     robot_pose = json_message['content']
-                    self.robot_pose[json_message['robot_id']] = LionsbotCoord(x=robot_pose['x'],
+                    self.robot_pose[robot_id] = LionsbotCoord(x=robot_pose['x'],
                                                                 y=robot_pose['y'],
                                                                 orientation_radians=math.radians(robot_pose['heading']))
 
         def on_error(wsc, error):
-            print(error)
+            logger.error(error)
 
         def on_close(wsc, close_status_code, close_msg):
             print("### Position Websocket Connecton Closed ###")
 
         def on_open(wsc):
             print("Opened Position Websocket Connection")
-            self._log_ws_subprotocol_selected('robotpose', wsc)
 
         path = f'{constants.WS_OPEN_API_PREFIX}/robotpose'
         subprotocols = self._ws_subprotocols()
@@ -381,20 +390,27 @@ class RobotAPI:
         # TODO: check if origin should be set
         self.robot_pose_ws_connection.run_forever(suppress_origin=True)
 
+    def is_subscribed(self, robot_encoding_id: str) -> bool:
+        return robot_encoding_id in self._subscribed_robots
+
     def subscribe_to_robot(self, robot_encoding_id: str, time_stamp: float):
+        if robot_encoding_id in self._subscribed_robots:
+            return True
+
         payload = {'operation_cmd': 'subscribe', 'robot_id': robot_encoding_id}
         subscribe_status_message = json.dumps(payload)
         subscribe_pose_message = json.dumps(payload)
-
-        self._log_ws_send('robotstatus', subscribe_status_message)
-        self._log_ws_send('robotpose', subscribe_pose_message)
 
         if self.robot_status_ws_connection is None or self.robot_pose_ws_connection is None:
             logger.error('WS SEND subscribe skipped: WebSocket connection not established')
             return False
 
+        self._log_ws_send('robotstatus', subscribe_status_message)
+        self._log_ws_send('robotpose', subscribe_pose_message)
+
         self.robot_status_ws_connection.send(subscribe_status_message)
         self.robot_pose_ws_connection.send(subscribe_pose_message)
+        self._subscribed_robots.add(robot_encoding_id)
 
         time.sleep(2.5)
 
@@ -415,42 +431,6 @@ class RobotAPI:
         ''' Return Coordinate:LionsbotCoord expressed in the robot's coordinate frame or
             None if any errors are encountered'''
         position = self.robot_pose.get(robot_name, None)
-
-        # if position is None:
-        #     self.refresh_expired_token()
-
-        #     path = f'{constants.OPEN_API_PREFIX}/robot/{robot_name}/position'
-        #     headers = self._bearer_headers()
-
-        #     try:
-        #         r = self._get(path=path, headers=headers)
-        #         r.raise_for_status()
-        #         data = r.json()
-
-        #         x = data['x']
-        #         y = data['y']
-        #         orientation_radians = math.radians(data['heading'])
-
-        #         if x is None or y is None or orientation_radians is None:
-        #             return None
-                
-        #         position = LionsbotCoord(x, y, orientation_radians)
-        #         self.robot_pose[robot_name] = position
-
-        #         return position
-        #     except requests.exceptions.ConnectionError as connection_error:
-        #         print(f'Connection error: {connection_error}')
-        #     except HTTPError as http_err:
-        #         logger.error(
-        #             'GET %s failed: %s body=%s (Authorization Bearer %s)',
-        #             path,
-        #             http_err,
-        #             getattr(http_err.response, 'text', ''),
-        #             _mask_token(self.token),
-        #         )
-        #         print(f'HTTP error: {http_err}')
-
-        #     return None
 
         return position
 

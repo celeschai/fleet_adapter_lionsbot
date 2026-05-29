@@ -217,6 +217,14 @@ def initialize_fleet(config_yaml, nav_graph_path, node, use_sim_time, server_uri
             time.sleep(0.2)
             for robot_name in list(missing_robots.keys()):
                 node.get_logger().debug(f"Connecting to robot: {robot_name}")
+
+                if not api.is_subscribed(robot_name):
+                    node.get_logger().info(f"Subscribing to robot: {robot_name}")
+                    if not api.subscribe_to_robot(robot_name, time.time_ns() / 1000000):
+                        node.get_logger().debug(
+                            f"Subscribe failed for {robot_name}, retrying...")
+                        continue
+
                 robot_position: LionsbotCoord = api.position(robot_name)
 
                 if robot_position is None:
@@ -265,9 +273,6 @@ def initialize_fleet(config_yaml, nav_graph_path, node, use_sim_time, server_uri
                         node.get_logger().error(
                             f"Unable to determine StartSet for {robot_name}")
                         continue
-
-                    node.get_logger().info(f"Subscribing to robot: {robot_name}")
-                    api.subscribe_to_robot(robot_name, time.time_ns() / 1000000)
 
                     api.robot_current_building[robot_name] = rmf_config['start']['building_name']
                     api.robot_current_map[robot_name] = rmf_config['start']['map_name']
