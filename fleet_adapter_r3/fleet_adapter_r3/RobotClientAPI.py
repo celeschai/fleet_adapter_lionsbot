@@ -291,7 +291,6 @@ class RobotAPI:
                     self.robot_status[robot_id] = {
                         'eta': robot_status['time_to_complete'],
                         'alertIds': alert_ids,
-                        'docked': robot_status['docked'],
                         'progress': robot_status['mission_progress'],
                         'localized': robot_status['localized'],
                         'batterySoc': robot_status['battery_soc'],
@@ -354,7 +353,10 @@ class RobotAPI:
             return
 
         def on_message(wsc, message):
-            logger.debug('WS RECV pose message=%s', message)
+            log_msg = message
+            if len(log_msg) > 16:
+                log_msg = log_msg[:8] + '...' + log_msg[-8:]
+            logger.debug('WS RECV pose message=%s', log_msg)
             json_message = json.loads(message)
             with self._lock:
                 if json_message.get('operation_fb') == 'ping':
@@ -480,33 +482,7 @@ class RobotAPI:
         return None
 
     def get_robot_status(self, robot_name: str):
-        robot_status = self.robot_status.get(robot_name, None)
-
-        if robot_status is None:
-            self.refresh_expired_token()
-
-            path = f'{constants.OPEN_API_PREFIX}/robot/{robot_name}/status'
-            headers = self._bearer_headers()
-
-            try:
-                r = self._get(path=path, headers=headers)
-                r.raise_for_status()
-                data = r.json()
-
-                # Initialize current state id
-                self.robot_current_state_id[robot_name] = uuid.uuid4()
-
-                self.robot_status[robot_name] = data
-
-                return data
-            except requests.exceptions.ConnectionError as connection_error:
-                print(f'Connection error: {connection_error}')
-            except HTTPError as http_err:
-                print(f'HTTP error: {http_err}')
-
-            return None
-
-        return robot_status
+        return self.robot_status.get(robot_name, None)
 
     def navigation_remaining_duration(self, robot_name: str):
         ''' Return the number of seconds remaining for the robot to reach its
@@ -845,7 +821,8 @@ class RobotAPI:
         self.refresh_expired_token()
 
         robot_status = self.get_robot_status(robot_name=robot_name)
-        if robot_status['docked'] or robot_status['status'] == RobotStatus.RESTING.value:
+        if robot_status['status'] == RobotStatus.DOCKED.value or \
+                robot_status['status'] == RobotStatus.RESTING.value:
             return True
 
         stop_process_content = StopProcessContent(
@@ -937,7 +914,8 @@ class RobotAPI:
         if robot_status is None:
             return False
 
-        if not robot_status['docked'] or robot_status['status'] == RobotStatus.RESTING.value:
+        if robot_status['status'] != RobotStatus.DOCKED.value or \
+                robot_status['status'] == RobotStatus.RESTING.value:
             return True
         return False
 
@@ -951,7 +929,7 @@ class RobotAPI:
         if robot_status is None:
             return False
         
-        if robot_status['docked'] or robot_status['status'] == RobotStatus.DOCKED.value:
+        if robot_status['status'] == RobotStatus.DOCKED.value:
             return True
         return False
 
@@ -1091,7 +1069,8 @@ class RobotAPI:
         return robot_status['status'] == RobotStatus.MOVING_PAUSED.value   
 
     def dock_robot(self, robot_name: str, time_stamp: float, content: DockProcessContent):
-        if self.get_robot_status(robot_name=robot_name)['docked']:
+        robot_status = self.get_robot_status(robot_name=robot_name)
+        if robot_status is not None and robot_status['status'] == RobotStatus.DOCKED.value:
             return True
 
         payload = self._build_ws_command_payload(

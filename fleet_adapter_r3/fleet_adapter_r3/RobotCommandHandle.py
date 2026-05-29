@@ -334,7 +334,7 @@ class RobotCommandHandle(adpt.RobotCommandHandle):
                                         self.path_index, timedelta(seconds=duration))
                         continue
                     
-                    if robot_status['docked'] or robot_status['status'] == RobotStatus.DOCKED.value:
+                    if robot_status['status'] == RobotStatus.DOCKED.value:
                         while True:
                             if self._quit_dock_event.is_set():
                                 self.node.get_logger().info('Aborting undock')
