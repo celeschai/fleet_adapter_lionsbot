@@ -314,7 +314,7 @@ class RobotAPI:
                         'progress': status_snapshot.get('progress')
                     }
                 elif operation_fb == OperationEndStatus.P2P_END_STATUS:
-                    self.robot_operation_end_status = json_message
+                    self.robot_operation_end_status[robot_id] = json_message
                 else:
                     robot_operation = self.robot_operation.get(robot_id, None)
                     if robot_operation is not None and \

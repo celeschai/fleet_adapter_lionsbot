@@ -46,5 +46,5 @@ fi
 echo "=== 6. Launching fleet_adapter_r3 ==="
 ros2 run fleet_adapter_r3 fleet_adapter \
     -c configs/config.yaml \
-    -n maps/L3_pantry.yaml \
-    -d configs/dock_summary.yaml
+    -n maps/0.yaml \
+    -d maps/dock_summary.yaml
